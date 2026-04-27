@@ -1,38 +1,36 @@
-import anthropic
+import openai
 import base64
 from pathlib import Path
 
 
 def generate_image(prompt: str, size: str = "1024x1024") -> bytes:
     """
-    Generate an image using Claude's vision capabilities.
+    Generate an image using OpenAI's DALL-E API.
     
     Args:
         prompt: Description of the image to generate
-        size: Image size (1024x1024, 1024x1792, or 1792x1024)
+        size: Image size (256x256, 512x512, or 1024x1024)
     
     Returns:
         Image bytes
     """
-    client = anthropic.Anthropic()
+    client = openai.OpenAI()
     
-    message = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Generate an image with this description: {prompt}"
-                    }
-                ]
-            }
-        ]
+    response = client.images.generate(
+        model="dall-e-3",
+        prompt=prompt,
+        size=size,
+        quality="standard",
+        n=1
     )
     
-    return message.content[0].text.encode()
+    image_url = response.data[0].url
+    image_response = client.with_options(default_headers={"User-Agent": "Belu-AI"}).beta.raw(
+        method="GET",
+        url=image_url
+    )
+    
+    return image_response.content
 
 
 def save_image(image_data: bytes, filename: str) -> str:
@@ -67,7 +65,7 @@ def encode_image_to_base64(image_path: str) -> str:
 
 def analyze_image(image_path: str, prompt: str) -> str:
     """
-    Analyze an image using Claude's vision capabilities.
+    Analyze an image using OpenAI's GPT-4 Vision API.
     
     Args:
         image_path: Path to image file
@@ -76,7 +74,7 @@ def analyze_image(image_path: str, prompt: str) -> str:
     Returns:
         Analysis result
     """
-    client = anthropic.Anthropic()
+    client = openai.OpenAI()
     
     image_data = encode_image_to_base64(image_path)
     image_extension = Path(image_path).suffix.lower()
@@ -90,19 +88,16 @@ def analyze_image(image_path: str, prompt: str) -> str:
     }
     media_type = media_type_map.get(image_extension, "image/jpeg")
     
-    message = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=1024,
+    message = client.chat.completions.create(
+        model="gpt-4-vision-preview",
         messages=[
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_data,
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{media_type};base64,{image_data}",
                         },
                     },
                     {
@@ -112,6 +107,7 @@ def analyze_image(image_path: str, prompt: str) -> str:
                 ],
             }
         ],
+        max_tokens=1024,
     )
     
-    return message.content[0].text
+    return message.choices[0].message.content
